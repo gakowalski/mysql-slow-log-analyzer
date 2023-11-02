@@ -1,5 +1,7 @@
 <?php
 
+require 'config-analysis.php';
+
 $mysqldumpslow_cmd = 'mysqldumpslow';
 
 // check if mysqldumpslow command exists
@@ -227,7 +229,7 @@ function analyze_mysqldumpslow_results($results) {
     
             $used_filesort_method = in_array('Using filesort', $used_search_methods);
     
-            $ok = $rows < 2;
+            $ok = $rows < get_analysis_parameter('acceptable_number_of_rows');
             $not_ok = $no_possible_keys || $no_used_keys || $used_filesort_method;
     
             echo "Explain step $count: \n";
