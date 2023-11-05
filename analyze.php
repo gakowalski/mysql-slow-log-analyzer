@@ -1,8 +1,7 @@
 <?php
 
 require 'config-analysis.php';
-
-$mysqldumpslow_cmd = 'mysqldumpslow';
+require 'pdo-extended.php';
 
 // check if mysqldumpslow command exists
 if (shell_exec("which $mysqldumpslow_cmd") === null) {
@@ -15,45 +14,6 @@ if (isset($argv[1])) {
     $number_of_seconds = $argv[1];
 } else {
     $number_of_seconds = 0;
-}
-
-class PDO_Extended extends PDO {
-    private $current_database = null;
-
-    public function set_global_variable($variable_name, $variable_value) {
-        $this->query("SET GLOBAL $variable_name = $variable_value");
-    }
-
-    public function database_exists($database_name) {
-        $show_databases_query = $this->query('SHOW DATABASES');
-        $databases = $show_databases_query->fetchAll(PDO::FETCH_COLUMN);
-        return in_array($database_name, $databases);
-    }
-
-    public function show_databases() {
-        $show_databases_query = $this->query('SHOW DATABASES');
-        return $show_databases_query->fetchAll(PDO::FETCH_COLUMN);
-    }
-
-    public function use_database($database_name) : bool {
-        if ($this->current_database == $database_name) {
-            return true;
-        }
-        if (!$this->database_exists($database_name)) {
-            return false;
-        }
-        $this->query("USE $database_name");
-        return true;
-    }
-
-    public function explain($query) {
-        $explain_query = $this->query("EXPLAIN $query");
-        return $explain_query->fetchAll(PDO::FETCH_ASSOC);
-    }
-}
-
-function is_root_user() {
-    return posix_getuid() == 0;
 }
 
 function mysqldumpslow($log_file_path, $sort_type = 'at', $num_of_queries = 10) {
@@ -114,6 +74,10 @@ function mysqldumpslow($log_file_path, $sort_type = 'at', $num_of_queries = 10) 
     return $result;
 }
 
+function is_root_user() {
+    return posix_getuid() == 0;
+}
+
 // if not root user, echo error message and exit
 if (!is_root_user()) {
     echo "You must be root to run this script\n";
@@ -122,17 +86,10 @@ if (!is_root_user()) {
     echo "You are root\n";
 }
 
-// connect to MySQL instance as root, without password
-$user = 'root';
-$pass = '';
-$db = new PDO_Extended('mysql:host=localhost', $user, $pass);
+// connect to MySQL
+$db = new PDO_Extended("mysql:host=$admin_host", $admin_user, $admin_password);
 
-$mysql_global_variables_query = $db->query('SHOW GLOBAL VARIABLES');
-$mysql_global_variables = [];
-
-foreach ($mysql_global_variables_query->fetchAll(PDO::FETCH_ASSOC) as $variable) {
-    $mysql_global_variables[$variable['Variable_name']] = $variable['Value'];
-}
+$mysql_global_variables = $db->get_global_variables();
 
 if ($mysql_global_variables['log_output'] == 'FILE') {
     $slow_query_log_file = $mysql_global_variables['slow_query_log_file'];
@@ -184,9 +141,10 @@ if ($number_of_seconds > 0) {
     echo "Purging slow query log file\n";
     file_put_contents($slow_query_log_file, '');   
 
-    echo "Taking sample of slow queries from last $number_of_seconds seconds\n";
+    echo "Setting long_query_time to $long_query_time\n";
+    $db->set_global_variable('long_query_time', $long_query_time);
 
-    $db->set_global_variable('long_query_time', $number_of_seconds);
+    echo "Taking sample of slow queries from last $number_of_seconds seconds\n";
     $db->set_global_variable('slow_query_log', 'ON');
 
     // pause for $number_of_seconds seconds
