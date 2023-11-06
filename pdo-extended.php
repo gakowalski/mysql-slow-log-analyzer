@@ -27,6 +27,9 @@ class PDO_Extended extends PDO {
     }
 
     public function set_global_variable($variable_name, $variable_value) {
+        if (false === in_array($variable_value, ['ON', 'OFF']) && is_string($variable_value)) {
+            $variable_value = "'$variable_value'";
+        }
         $this->query("SET GLOBAL $variable_name = $variable_value");
     }
 

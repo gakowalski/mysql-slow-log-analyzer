@@ -5,7 +5,7 @@ $admin_password = '';
 $admin_host = 'localhost';
 
 $mysqldumpslow_cmd = 'mysqldumpslow';
-$long_query_time = 10;
+$long_query_time = 5; // seconds
 
 $innodb_monitor_minimum_calculation_time = 20; // seconds
 

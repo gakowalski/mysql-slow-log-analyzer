@@ -92,8 +92,14 @@ $db = new PDO_Extended("mysql:host=$admin_host", $admin_user, $admin_password);
 $mysql_global_variables = $db->get_global_variables();
 
 if ($mysql_global_variables['log_output'] == 'FILE') {
+    echo "MySQL is configured to log to a file\n";
+} else {
+    echo "MySQL is not configured to log to a file\n";
+}
+
+if (isset($mysql_global_variables['slow_query_log_file'])) {
     $slow_query_log_file = $mysql_global_variables['slow_query_log_file'];
-    echo "MySQL is configured to log to a file: $slow_query_log_file\n";
+    echo "MySQL slow log path is defined as: $slow_query_log_file\n";
 
     // check if file exists
     if (file_exists($slow_query_log_file)) {
@@ -116,13 +122,19 @@ if ($mysql_global_variables['log_output'] == 'FILE') {
         echo "Slow query log file does not exist\n";
     }
 } else {
-    echo "MySQL is not configured to log to a file\n";
+    echo "MySQL slow log path is not defined\n";
+    $slow_query_log_file = null;
 }
 
 if ($mysql_global_variables['log_queries_not_using_indexes'] == 'ON') {
     echo "MySQL is configured to log queries not using indexes\n";
 } else {
     echo "MySQL is not configured to log queries not using indexes\n";
+}
+
+if (($mysql_global_variables['min_examined_row_limit'] ?? 0) > 0) {
+    $min_examined_row_limit = $mysql_global_variables['min_examined_row_limit'];
+    echo "Queries that examine fewer than $min_examined_row_limit of rows are not logged to the slow query log.\n";
 }
 
 if ($mysql_global_variables['long_query_time'] > 0) {
@@ -138,7 +150,30 @@ if ($mysql_global_variables['slow_query_log'] == 'ON') {
 }
 
 if ($number_of_seconds > 0) {
-    echo "Purging slow query log file\n";
+
+    if ($mysql_global_variables['log_output'] != 'FILE') {
+        // set log_output variable to FILE
+        echo "Setting log_output variable to FILE\n";
+        $db->set_global_variable('log_output', 'FILE');
+    }
+
+    if (empty($slow_query_log_file) || !file_exists($slow_query_log_file)) {
+        $slow_query_log_file = '/var/log/mysql/mysql-slow.log';
+
+        // create slow query log file with 666 permissions
+        echo "Creating slow query log file $slow_query_log_file\n";
+        touch($slow_query_log_file);
+        chmod($slow_query_log_file, 0666);
+
+        echo "Setting slow_query_log_file variable to $slow_query_log_file\n";
+        $db->set_global_variable('slow_query_log_file', $slow_query_log_file);
+    }
+
+    // set min_examined_row_limit to get_analysis_parameter('acceptable_number_of_rows')
+    echo "Setting min_examined_row_limit to " . get_analysis_parameter('acceptable_number_of_rows') . "\n";
+    $db->set_global_variable('min_examined_row_limit', get_analysis_parameter('acceptable_number_of_rows'));
+
+    echo "Purging slow query log file $slow_query_log_file \n";
     file_put_contents($slow_query_log_file, '');   
 
     echo "Setting long_query_time to $long_query_time\n";
@@ -151,6 +186,9 @@ if ($number_of_seconds > 0) {
     sleep($number_of_seconds);
 
     $db->set_global_variable('slow_query_log', 'OFF');
+
+    // pause for 1 seconds to make sure that MySQL has time to write to slow query log file
+    sleep(1);
 }
 
 function analyze_mysqldumpslow_results($results) {
