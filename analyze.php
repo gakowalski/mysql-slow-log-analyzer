@@ -43,23 +43,28 @@ function mysqldumpslow($log_file_path, $sort_type = 'at', $num_of_queries = 10) 
                 // parse metadata with regex
                 // sample metadata: Count: 2  Time=0.00s (0s)  Lock=0.00s (0s)  Rows_sent=6.0 (12), Rows_examined=4595.0 (9190), Rows_affected=0.0 (0), travel[travel]@localhost
                 $metadata_regex = '/Count: (?<count>\d+)  Time=(?<time>\d+\.\d+)s \((?<time_in_seconds>\d+)s\)  Lock=(?<lock>\d+\.\d+)s \((?<lock_in_seconds>\d+)s\)  Rows_sent=(?<rows_sent>\d+\.\d+) \((?<rows_sent_total>\d+)\), Rows_examined=(?<rows_examined>\d+\.\d+) \((?<rows_examined_total>\d+)\), Rows_affected=(?<rows_affected>\d+\.\d+) \((?<rows_affected_total>\d+)\), (?<user>[a-zA-Z0-9._-]+)\[(?<database>[a-zA-Z0-9._-]+)\]@/';
-                preg_match($metadata_regex, $current_query_metadata, $metadata_matches);
-                $metadata = [
-                    'count' => $metadata_matches['count'],
-                    'time' => $metadata_matches['time'],
-                    'time_in_seconds' => $metadata_matches['time_in_seconds'],
-                    'lock' => $metadata_matches['lock'],
-                    'lock_in_seconds' => $metadata_matches['lock_in_seconds'],
-                    'rows_sent' => $metadata_matches['rows_sent'],
-                    'rows_sent_total' => $metadata_matches['rows_sent_total'],
-                    'rows_examined' => $metadata_matches['rows_examined'],
-                    'rows_examined_total' => $metadata_matches['rows_examined_total'],
-                    'rows_affected' => $metadata_matches['rows_affected'],
-                    'rows_affected_total' => $metadata_matches['rows_affected_total'],
-                    'user' => $metadata_matches['user'],
-                    'database' => $metadata_matches['database'],
-                    'raw' => $current_query_metadata,
-                ];
+                if (preg_match($metadata_regex, $current_query_metadata, $metadata_matches)) {
+                    $metadata = [
+                        'count' => $metadata_matches['count'],
+                        'time' => $metadata_matches['time'],
+                        'time_in_seconds' => $metadata_matches['time_in_seconds'],
+                        'lock' => $metadata_matches['lock'],
+                        'lock_in_seconds' => $metadata_matches['lock_in_seconds'],
+                        'rows_sent' => $metadata_matches['rows_sent'],
+                        'rows_sent_total' => $metadata_matches['rows_sent_total'],
+                        'rows_examined' => $metadata_matches['rows_examined'],
+                        'rows_examined_total' => $metadata_matches['rows_examined_total'],
+                        'rows_affected' => $metadata_matches['rows_affected'],
+                        'rows_affected_total' => $metadata_matches['rows_affected_total'],
+                        'user' => $metadata_matches['user'],
+                        'database' => $metadata_matches['database'],
+                        'raw' => $current_query_metadata,
+                    ];
+                } else {
+                    $metadata = [
+                        'raw' => $current_query_metadata,
+                    ];
+                }
                 
                 $result[] = $metadata + [
                     'query' => $current_query,
@@ -182,21 +187,45 @@ if ($number_of_seconds > 0) {
     echo "Taking sample of slow queries from last $number_of_seconds seconds\n";
     $db->set_global_variable('slow_query_log', 'ON');
 
-    // pause for $number_of_seconds seconds
-    sleep($number_of_seconds);
+    if (get_analysis_parameter('fake_sleep_query')) {
+        $fake_long_query_time = $long_query_time + 1;
+        echo "Executing fake sleep query for $fake_long_query_time seconds\n";
+        $db->query("SELECT SLEEP($fake_long_query_time)");
+    } else {
+        $fake_long_query_time = 0;
+    }
+    
+    $waiting_seconds = $number_of_seconds - $fake_long_query_time;
+
+    if ($waiting_seconds > 0) {
+        echo "Waiting for $waiting_seconds seconds\n";
+        // pause for $number_of_seconds seconds
+        sleep($waiting_seconds);
+    } else {
+        echo "No need to wait\n";
+    }
+
+    // flush logs
+    echo "Flushing slow logs\n";
+    $db->query('FLUSH SLOW LOGS');
 
     $db->set_global_variable('slow_query_log', 'OFF');
 
-    // pause for 1 seconds to make sure that MySQL has time to write to slow query log file
-    sleep(1);
+    // pause for 2 seconds to make sure that MySQL has time to write to slow query log file
+    echo "Waiting for 2 seconds for slow log to end flush\n";
+    sleep(2);
 }
 
 function analyze_mysqldumpslow_results($results) {
     global $db;
 
-    echo "Slow queries analysis:\n";
+    echo "Starting analysis\n";
 
     foreach ($results as $slow_query) {
+        if (empty($slow_query['query'])) {
+            continue;
+        }
+
         echo "--- Slow query analysis ---\n";
         echo "Query: \n\tUSE " . $slow_query['database'] . "; EXPLAIN " . $slow_query['query'] . "\n";
         if ($db->use_database($slow_query['database']) === false) {

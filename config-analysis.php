@@ -11,7 +11,8 @@ $innodb_monitor_minimum_calculation_time = 20; // seconds
 
 function get_analysis_parameter($name) {
     $parameters = [
-        'acceptable_number_of_rows' => 200,
+        'acceptable_number_of_rows' => 200, // number of rows
+        'fake_sleep_query' => false,       // boolean
     ];
     return $parameters[$name];
 };
