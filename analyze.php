@@ -167,6 +167,15 @@ if ($number_of_seconds > 0) {
 
         // create slow query log file with 666 permissions
         echo "Creating slow query log file $slow_query_log_file\n";
+
+        // create folder if it does not exist
+        $slow_query_log_file_folder = dirname($slow_query_log_file);
+
+        if (!file_exists($slow_query_log_file_folder)) {
+            echo "Creating folder $slow_query_log_file_folder\n";
+            mkdir($slow_query_log_file_folder, 0777, true);
+        }
+
         touch($slow_query_log_file);
         chmod($slow_query_log_file, 0666);
 
@@ -226,14 +235,35 @@ function analyze_mysqldumpslow_results($results) {
             continue;
         }
 
+        // check if $slow_query['query'] contains similar commands to "use table_name;"
+        // and quote table name with backticks
+        /*
+        if (preg_match('/use (?<table_name>[a-zA-Z0-9._-]+);/i', $slow_query['query'], $matches)) {
+            $slow_query['query'] = str_replace($matches[0], "USE `{$matches['table_name']}`;", $slow_query['query']);
+        }
+        */
+
+        // remove USE statements from query
+        $slow_query['query'] = preg_replace('/use [a-zA-Z0-9._-]+;/i', '', $slow_query['query']);
+
+        // remove SET statements from query
+        $slow_query['query'] = preg_replace('/set [a-zA-Z0-9._-]+=[a-zA-Z0-9._-]+;/i', '', $slow_query['query']);
+
         echo "--- Slow query analysis ---\n";
-        echo "Query: \n\tUSE " . $slow_query['database'] . "; EXPLAIN " . $slow_query['query'] . "\n";
+        echo "Query: \n\tUSE `" . $slow_query['database'] . "`; EXPLAIN " . trim($slow_query['query']) . "\n";
         if ($db->use_database($slow_query['database']) === false) {
             echo "Database {$slow_query['database']} does not exist\n";
             echo "Raw query header: \n\t" . $slow_query['raw'] . "\n";
             continue;
         }
-        $explain = $db->explain($slow_query['query']);
+        try {
+            $explain = $db->explain($slow_query['query']);
+        }
+        catch (PDOException $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            echo "Raw query header: \n\t" . $slow_query['raw'] . "\n";
+            continue;
+        }
     
         $count = 1;
     

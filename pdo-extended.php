@@ -51,7 +51,7 @@ class PDO_Extended extends PDO {
         if (!$this->database_exists($database_name)) {
             return false;
         }
-        $this->query("USE $database_name");
+        $this->query("USE `$database_name`");
         return true;
     }
 
