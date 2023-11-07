@@ -250,12 +250,20 @@ function analyze_mysqldumpslow_results($results) {
         $slow_query['query'] = preg_replace('/set [a-zA-Z0-9._-]+=[a-zA-Z0-9._-]+;/i', '', $slow_query['query']);
 
         echo "--- Slow query analysis ---\n";
-        echo "Query: \n\tUSE `" . $slow_query['database'] . "`; EXPLAIN " . trim($slow_query['query']) . "\n";
+        echo "USE `" . $slow_query['database'] . "`; EXPLAIN " . trim($slow_query['query']) . "\n";
         if ($db->use_database($slow_query['database']) === false) {
             echo "Database {$slow_query['database']} does not exist\n";
             echo "Raw query header: \n\t" . $slow_query['raw'] . "\n";
             continue;
         }
+
+        echo PHP_EOL;
+
+        // check if query contains "ORDER BY ... ASC LIMIT"
+        if (preg_match('/ORDER BY (?<column>[a-zA-Z0-9._`-]+) (ASC|DESC) LIMIT/i', $slow_query['query'], $matches)) {
+            echo "\tQuery contains ORDER BY ... ASC LIMIT -> make sure there is an index set on {$matches['column']} \n";
+        }
+
         try {
             $explain = $db->explain($slow_query['query']);
         }
